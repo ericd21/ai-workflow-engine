@@ -1,0 +1,40 @@
+[tool.poetry]
+name = "ai_workflow_engine"
+version = "0.1.0"
+description = "AI workflow engine using LangGraph + FastAPI"
+authors = ["Eric"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+langgraph = "*"
+langchain-core = "*"
+langchain-openai = "*"
+langchain-anthropic = "*"
+langsmith = "*"
+
+fastapi = "*"
+uvicorn = { extras = ["standard"], version = "*" }
+
+pydantic = "*"
+python-dotenv = "*"
+loguru = "*"
+httpx = "*"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "*"
+ruff = "*"
+mypy = "*"
+jupyter = "*"
+
+[tool.poetry.scripts]
+dev = "uvicorn app.api.main:app --reload"
+lint = "ruff check ."
+typecheck = "mypy ."
+test = "pytest"
+notebook = "jupyter notebook"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
