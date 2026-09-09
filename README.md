@@ -48,6 +48,15 @@ Run it offline with no API key:
 LLM_PROVIDER=mock poetry run poe dev
 ```
 
+Endpoints:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/` | the contact form |
+| `GET` | `/health` | liveness probe |
+| `POST` | `/submit` | JSON `IntakeRequest` → 200 `{run_id, target, sla, final_department, priority, human_review_required, summary}`; 422 (bad input) / 502 (workflow failure, with `run_id`) both return a string `detail` |
+| `GET` | `/docs` | OpenAPI UI |
+
 **CLI** (one workflow from the terminal):
 
 ```bash
