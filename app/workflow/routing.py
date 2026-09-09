@@ -56,10 +56,8 @@ def run_routing(triage: TriageDecision, run_id: str) -> RoutingDecision:
             sla = SLA.immediate
         elif urgency == Urgency.medium:
             sla = SLA.one_hour
-        elif urgency == Urgency.low:
+        else:  # Urgency.low
             sla = SLA.four_hours
-        else:
-            sla = SLA.low_priority
 
     # ---------------------------------------------------------
     # 3. Build RoutingDecision object

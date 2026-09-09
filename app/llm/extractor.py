@@ -69,9 +69,6 @@ def _parse_extraction_json(raw_output: str, run_id) -> dict[str, Any]:
     except json.JSONDecodeError as e:
         raise ValueError(f"Malformed JSON from model: {e}")
 
-    if not isinstance(data, dict):
-        raise ValueError("Model returned JSON that is not an object.")
-
     required_fields = {
         "department",
         "department_confidence",
