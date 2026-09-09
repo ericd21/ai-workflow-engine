@@ -1,17 +1,25 @@
 from langsmith import traceable
 
+from app.config import get_settings
 from app.logging_config import get_logger
-from app.schemas.extraction import ExtractionResult, Category, Urgency
-from app.schemas.triage import TriageDecision, Priority
+from app.schemas.extraction import ExtractionResult, Urgency
+from app.schemas.intake import Department
+from app.schemas.triage import Priority, TriageDecision
 
 logger = get_logger(__name__)
 
 
 @traceable(name="deterministic_triage")
-def run_triage(extraction: ExtractionResult, run_id: str) -> TriageDecision:
+def run_triage(
+    extraction: ExtractionResult,
+    run_id: str,
+    submitted_department: Department,
+) -> TriageDecision:
     """
     Deterministic triage step.
-    Consumes ExtractionResult and produces a TriageDecision.
+
+    Consumes the LLM ``ExtractionResult`` plus the department the user picked on
+    the form (``submitted_department``) and produces a ``TriageDecision``.
     """
 
     logger.info(
@@ -19,23 +27,41 @@ def run_triage(extraction: ExtractionResult, run_id: str) -> TriageDecision:
         extra={"run_id": run_id, "event": "triage_start"}
     )
 
-    # ---------------------------------------------------------
-    # 1. Determine final category (deterministic rules)
-    # ---------------------------------------------------------
+    settings = get_settings()
+    threshold = settings.department_confidence_threshold
 
-    extracted_category: Category = extraction.category
+    extracted_department: Department = extraction.department
     extracted_urgency: Urgency = extraction.urgency
 
-    category_overridden = False
-    category_override_reason = None
+    department_overridden = False
+    department_override_reason = None
+    human_review_required = False
+    human_review_reason = None
 
-    # Example deterministic override rules
-    if extracted_category == Category.support and "error_code" in extraction.missing_info:
-        final_category = Category.support
-        category_overridden = True
-        category_override_reason = "Support category forced due to missing error_code"
+    # ---------------------------------------------------------
+    # 1. Reconcile submitted vs. extracted department
+    # ---------------------------------------------------------
+
+    if extracted_department == submitted_department:
+        final_department = submitted_department
+    elif extraction.department_confidence >= threshold:
+        # Confident disagreement → the LLM wins.
+        final_department = extracted_department
+        department_overridden = True
+        department_override_reason = (
+            f"LLM reclassified from '{submitted_department.value}' to "
+            f"'{extracted_department.value}' "
+            f"(confidence {extraction.department_confidence:.2f} >= {threshold:.2f})"
+        )
     else:
-        final_category = extracted_category
+        # Unconfident disagreement → keep the user's choice, flag for a human.
+        final_department = submitted_department
+        human_review_required = True
+        human_review_reason = (
+            f"Ambiguous department: user chose '{submitted_department.value}', "
+            f"LLM suggested '{extracted_department.value}' at low confidence "
+            f"({extraction.department_confidence:.2f} < {threshold:.2f})"
+        )
 
     # ---------------------------------------------------------
     # 2. Determine priority (deterministic rules)
@@ -49,22 +75,13 @@ def run_triage(extraction: ExtractionResult, run_id: str) -> TriageDecision:
         priority = Priority.low
 
     # ---------------------------------------------------------
-    # 3. Determine human review requirement
+    # 3. Additional human-review triggers (never clears an existing flag)
     # ---------------------------------------------------------
-
-    human_review_required = False
-    human_review_reason = None
-
-    # Example rule: low confidence → human review
-    if extraction.category_confidence < 0.55:
-        human_review_required = True
-        human_review_reason = "Low category confidence"
 
     if extraction.summary_confidence < 0.50:
         human_review_required = True
         human_review_reason = "Low summary confidence"
 
-    # Example rule: missing critical info
     if "order_number" in extraction.missing_info:
         human_review_required = True
         human_review_reason = "Missing critical field: order_number"
@@ -74,14 +91,14 @@ def run_triage(extraction: ExtractionResult, run_id: str) -> TriageDecision:
     # ---------------------------------------------------------
 
     decision = TriageDecision(
-        final_category=final_category,
-        category_overridden=category_overridden,
-        category_override_reason=category_override_reason,
+        final_department=final_department,
+        department_overridden=department_overridden,
+        department_override_reason=department_override_reason,
         priority=priority,
         human_review_required=human_review_required,
         human_review_reason=human_review_reason,
         missing_info=extraction.missing_info,
-        category_confidence=extraction.category_confidence,
+        department_confidence=extraction.department_confidence,
         tone_confidence=extraction.tone_confidence,
         urgency_confidence=extraction.urgency_confidence,
         summary_confidence=extraction.summary_confidence,
@@ -100,7 +117,8 @@ def run_triage(extraction: ExtractionResult, run_id: str) -> TriageDecision:
         extra={
             "run_id": run_id,
             "event": "triage_complete",
-            "final_category": decision.final_category,
+            "final_department": decision.final_department,
+            "department_overridden": decision.department_overridden,
             "priority": decision.priority,
             "human_review_required": decision.human_review_required,
             "missing_info": decision.missing_info,

@@ -1,87 +1,86 @@
-import logging
-import uuid
-from langsmith import traceable
+"""Command-line entry point: run a single workflow from the terminal.
 
-from llm.extractor import extract_structured_payload
-from workflow.triage import triage
-from workflow.routing import route
-from app.logging_config import configure_logging  # your JSON logging setup
+Thin wrapper around ``WorkflowEngine`` — handy for quick manual checks. Pair it
+with ``LLM_PROVIDER=mock`` to run end to end with no API key and no network:
 
-logger = logging.getLogger(__name__)
+    python -m app.main "The billing page shows the wrong amount" --department billing
+"""
+
+import argparse
+import json
+import sys
+
+from app.logging_config import configure_logging
+from app.schemas.intake import Department, IntakeRequest
+from app.workflow.engine import engine
+from app.workflow.errors import WorkflowError
 
 
-def generate_run_id() -> str:
-    return str(uuid.uuid4())
+def _serialize(value):
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    return value
 
 
-@traceable(name="run_workflow")
-def run_workflow(user_message: str, run_id: str | None = None):
-    """
-    Orchestrates the full workflow:
-    intake -> extraction -> triage -> routing
-    All steps are traceable and share run_id.
-    """
-
-    if run_id is None:
-        run_id = generate_run_id()
-
-    logger.info(
-        "Workflow started",
-        extra={
-            "run_id": run_id,
-            "event": "workflow_start",
-        },
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="app.main",
+        description="Run one AI workflow (intake → extraction → triage → routing).",
     )
-
-    try:
-        # Intake could have its own @traceable if you add validation
-        structured_payload = extract_structured_payload(
-            user_message=user_message,
-            run_id=run_id,
-        )
-
-        triage_result = triage(structured_payload=structured_payload, run_id=run_id)
-
-        routing_decision = route(triage_result=triage_result, run_id=run_id)
-
-        logger.info(
-            "Workflow completed successfully",
-            extra={
-                "run_id": run_id,
-                "event": "workflow_success",
-                "routing_decision": routing_decision,
-            },
-        )
-
-        return {
-            "run_id": run_id,
-            "structured_payload": structured_payload,
-            "triage_result": triage_result,
-            "routing_decision": routing_decision,
-        }
-
-    except Exception as e:
-        logger.exception(
-            "Workflow failed",
-            extra={
-                "run_id": run_id,
-                "event": "workflow_failure",
-                "error": str(e),
-            },
-        )
-        # You can choose to re‑raise or return an error envelope
-        raise
+    parser.add_argument("message", help="The inbound user message to process.")
+    parser.add_argument("--name", default="CLI User", help="Submitter name.")
+    parser.add_argument(
+        "--department",
+        default="other",
+        choices=[d.value for d in Department],
+        help="Department picked on the form (default: other).",
+    )
+    parser.add_argument("--email", default="cli@example.com", help="Contact email.")
+    parser.add_argument("--phone", default=None, help="Contact phone (optional).")
+    return parser
 
 
-def main():
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
     configure_logging()
 
-    user_message = "Example inbound message from user..."
-    run_id = generate_run_id()
+    try:
+        intake = IntakeRequest(
+            name=args.name,
+            email=args.email,
+            phone=args.phone,
+            department=Department(args.department),
+            message=args.message,
+        )
+    except Exception as e:  # pydantic ValidationError, etc.
+        parser.error(f"invalid intake: {e}")
 
-    result = run_workflow(user_message=user_message, run_id=run_id)
-    print(result)
+    try:
+        result = engine.run_workflow(intake)
+    except WorkflowError as e:
+        print(
+            json.dumps(
+                {"run_id": e.run_id, "status": "failed", "errors": e.errors}, indent=2
+            )
+        )
+        return 1
+
+    print(
+        json.dumps(
+            {
+                "run_id": result["run_id"],
+                "status": "ok",
+                "routing": _serialize(result.get("routing")),
+                "triage": _serialize(result.get("triage")),
+            },
+            indent=2,
+            default=str,
+        )
+    )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

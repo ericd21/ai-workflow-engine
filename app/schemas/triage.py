@@ -1,8 +1,9 @@
-from pydantic import BaseModel, Field
 from enum import Enum
-from typing import Optional, List
 
-from app.schemas.extraction import Category, Tone, Urgency
+from pydantic import BaseModel, Field
+
+from app.schemas.extraction import Tone, Urgency
+from app.schemas.intake import Department
 
 
 class Priority(str, Enum):
@@ -12,25 +13,25 @@ class Priority(str, Enum):
 
 
 class TriageDecision(BaseModel):
-    # Final category after deterministic rules
-    final_category: Category
+    # Final department after deterministic rules
+    final_department: Department
 
-    # Whether the dropdown was overridden
-    category_overridden: bool = False
-    category_override_reason: Optional[str] = None
+    # Whether the submitted department was overridden
+    department_overridden: bool = False
+    department_override_reason: str | None = None
 
     # Priority assigned by rules engine
     priority: Priority
 
     # Human review flag
     human_review_required: bool = False
-    human_review_reason: Optional[str] = None
+    human_review_reason: str | None = None
 
     # Missing info propagated from extraction
-    missing_info: List[str] = Field(default_factory=list)
+    missing_info: list[str] = Field(default_factory=list)
 
     # Confidence signals (copied from extraction)
-    category_confidence: float = Field(..., ge=0.0, le=1.0)
+    department_confidence: float = Field(..., ge=0.0, le=1.0)
     tone_confidence: float = Field(..., ge=0.0, le=1.0)
     urgency_confidence: float = Field(..., ge=0.0, le=1.0)
     summary_confidence: float = Field(..., ge=0.0, le=1.0)
@@ -41,4 +42,4 @@ class TriageDecision(BaseModel):
     summary: str
 
     # Optional: triage notes for logging/debugging
-    triage_notes: Optional[str] = None
+    triage_notes: str | None = None

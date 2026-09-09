@@ -1,12 +1,8 @@
-from pydantic import BaseModel, Field
 from enum import Enum
 
+from pydantic import BaseModel, Field
 
-class Category(str, Enum):
-    support = "support"
-    billing = "billing"
-    sales = "sales"
-    other = "other"
+from app.schemas.intake import Department
 
 
 class Tone(str, Enum):
@@ -22,8 +18,8 @@ class Urgency(str, Enum):
 
 
 class ExtractionResult(BaseModel):
-    category: Category
-    category_confidence: float = Field(..., ge=0.0, le=1.0)
+    department: Department
+    department_confidence: float = Field(..., ge=0.0, le=1.0)
 
     tone: Tone
     tone_confidence: float = Field(..., ge=0.0, le=1.0)

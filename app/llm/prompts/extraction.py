@@ -3,8 +3,8 @@ You are an AI extraction module inside an enterprise workflow engine.
 
 Your job is to analyze the user's message and extract the following fields:
 
-- category (string)
-- category_confidence (0–1 float)
+- department (string)
+- department_confidence (0–1 float)
 - tone (string)
 - tone_confidence (0–1 float)
 - urgency (string)
@@ -25,7 +25,7 @@ urgency:
 - medium
 - high
 
-category:
+department:
 - support
 - billing
 - sales
@@ -36,8 +36,8 @@ You must choose exactly one value from each list. Never invent new values.
 Return ONLY valid JSON matching this exact schema:
 
 {
-  "category": "support | billing | sales | other",
-  "category_confidence": 0.0,
+  "department": "support | billing | sales | other",
+  "department_confidence": 0.0,
   "tone": "positive | negative | neutral",
   "tone_confidence": 0.0,
   "urgency": "low | medium | high",

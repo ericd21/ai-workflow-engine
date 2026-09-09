@@ -4,36 +4,53 @@ version = "0.1.0"
 description = "AI workflow engine using LangGraph + FastAPI"
 authors = ["Eric"]
 readme = "README.md"
+packages = [{ include = "app" }]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">=3.12,<3.14"
 
 langgraph = "*"
 langchain-core = "*"
-langchain-openai = "*"
 langchain-anthropic = "*"
 langsmith = "*"
 
 fastapi = "*"
 uvicorn = { extras = ["standard"], version = "*" }
 
-pydantic = "*"
+pydantic = { extras = ["email"], version = "*" }
 python-dotenv = "*"
-loguru = "*"
 httpx = "*"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "*"
+pytest-asyncio = "*"
+pytest-cov = "*"
+poethepoet = "*"
 ruff = "*"
 mypy = "*"
 jupyter = "*"
 
+# Console script — `poetry run workflow "<message>" --department support`
 [tool.poetry.scripts]
+workflow = "app.main:main"
+
+# Task runner (poethepoet) — `poetry run poe <task>`
+[tool.poe.tasks]
 dev = "uvicorn app.api.main:app --reload"
-lint = "ruff check ."
-typecheck = "mypy ."
 test = "pytest"
+lint = "ruff check ."
+typecheck = "mypy app"
 notebook = "jupyter notebook"
+
+[tool.ruff.lint]
+# BLE001: broad `except Exception` is deliberate at the LLM/retry and CLI
+#         boundaries. TRY004: the extraction parser raises ValueError for every
+#         shape of bad model output on purpose (the retry loop keys on it).
+ignore = ["BLE001", "TRY004"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [build-system]
 requires = ["poetry-core"]

@@ -1,10 +1,10 @@
 from langsmith import traceable
 
 from app.logging_config import get_logger
+from app.schemas.extraction import Urgency
+from app.schemas.intake import Department
+from app.schemas.routing import SLA, RoutingDecision, RoutingTarget
 from app.schemas.triage import TriageDecision
-from app.schemas.routing import RoutingDecision, RoutingTarget, SLA
-from app.schemas.extraction import Category, Urgency
-
 
 logger = get_logger(__name__)
 
@@ -21,7 +21,7 @@ def run_routing(triage: TriageDecision, run_id: str) -> RoutingDecision:
         extra={"run_id": run_id, "event": "routing_start"}
     )
 
-    final_category: Category = triage.final_category
+    final_department: Department = triage.final_department
     urgency: Urgency = triage.urgency
     priority = triage.priority
     human_review_required = triage.human_review_required
@@ -35,11 +35,11 @@ def run_routing(triage: TriageDecision, run_id: str) -> RoutingDecision:
         target = RoutingTarget.human_review_queue
 
     else:
-        if final_category == Category.support:
+        if final_department == Department.support:
             target = RoutingTarget.support_queue
-        elif final_category == Category.billing:
+        elif final_department == Department.billing:
             target = RoutingTarget.billing_queue
-        elif final_category == Category.sales:
+        elif final_department == Department.sales:
             target = RoutingTarget.sales_queue
         else:
             target = RoutingTarget.general_queue
@@ -70,7 +70,7 @@ def run_routing(triage: TriageDecision, run_id: str) -> RoutingDecision:
         sla=sla,
         human_review_required=human_review_required,
         human_review_reason=human_review_reason,
-        final_category=final_category,
+        final_department=final_department,
         urgency=urgency,
         priority=priority,
         summary=triage.summary,
@@ -89,7 +89,7 @@ def run_routing(triage: TriageDecision, run_id: str) -> RoutingDecision:
             "target": decision.target,
             "sla": decision.sla,
             "human_review_required": decision.human_review_required,
-            "final_category": decision.final_category,
+            "final_department": decision.final_department,
             "urgency": decision.urgency,
             "priority": decision.priority,
         },

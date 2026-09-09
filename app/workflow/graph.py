@@ -1,16 +1,19 @@
-from typing import Optional, Dict, Any
-from langgraph.graph import StateGraph, END
+from typing import Any
+
+from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
-from app.schemas.intake import IntakeRequest
-from app.schemas.extraction import ExtractionResult
-from app.schemas.triage import TriageDecision
-from app.schemas.routing import RoutingDecision
-
 from app.llm.extractor import run_extraction
-from app.workflow.triage import run_triage
-from app.workflow.routing import run_routing
+from app.logging_config import get_logger
+from app.schemas.extraction import ExtractionResult
+from app.schemas.intake import IntakeRequest
+from app.schemas.routing import RoutingDecision
+from app.schemas.triage import TriageDecision
 from app.storage.logging import write_log_record
+from app.workflow.routing import run_routing
+from app.workflow.triage import run_triage
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------
 # State Model
@@ -19,56 +22,70 @@ from app.storage.logging import write_log_record
 class WorkflowState(BaseModel):
     run_id: str
     intake: IntakeRequest
-    extraction: Optional[ExtractionResult] = None
-    triage: Optional[TriageDecision] = None
-    routing: Optional[RoutingDecision] = None
-    logs: Optional[Dict[str, Any]] = None
+    extraction: ExtractionResult | None = None
+    triage: TriageDecision | None = None
+    routing: RoutingDecision | None = None
+    logs: dict[str, Any] | None = None
     errors: list[str] = []
-    metadata: Dict[str, Any] = {}
-    
+    metadata: dict[str, Any] = {}
+
 # ---------------------------------------------------------
 # Node Definitions
+#
+# On failure a node records the error on state and returns normally; the
+# conditional edges below then route straight to the logging node so every
+# run — success or failure — produces a persisted structured log record.
 # ---------------------------------------------------------
 
 def intake_node(state: WorkflowState) -> WorkflowState:
-    # Intake is already validated by FastAPI before entering the graph.
-    # This node exists mainly for symmetry and future expansion.
+    # Intake is already validated by FastAPI / the engine before entering the
+    # graph. This node exists mainly for symmetry and future expansion.
     return state
 
 
 def extraction_node(state: WorkflowState) -> WorkflowState:
     try:
-        extraction = run_extraction(state.intake, state.run_id)
-        state.extraction = extraction
+        state.extraction = run_extraction(state.intake, state.run_id)
     except Exception as e:
-        state.errors.append(str(e))
-        raise
+        logger.exception(
+            "Extraction node failed",
+            extra={"run_id": state.run_id, "event": "node_error", "node": "extraction"},
+        )
+        state.errors.append(f"extraction: {e}")
     return state
 
 
 def triage_node(state: WorkflowState) -> WorkflowState:
     try:
-        triage = run_triage_rules(state.extraction, state.run_id)
-        state.triage = triage
+        state.triage = run_triage(
+            state.extraction,
+            state.run_id,
+            submitted_department=state.intake.department,
+        )
     except Exception as e:
-        state.errors.append(str(e))
-        raise
+        logger.exception(
+            "Triage node failed",
+            extra={"run_id": state.run_id, "event": "node_error", "node": "triage"},
+        )
+        state.errors.append(f"triage: {e}")
     return state
 
 
 def routing_node(state: WorkflowState) -> WorkflowState:
     try:
-        routing = run_routing_rules(state.triage, state.run_id)
-        state.routing = routing
+        state.routing = run_routing(state.triage, state.run_id)
     except Exception as e:
-        state.errors.append(str(e))
-        raise
+        logger.exception(
+            "Routing node failed",
+            extra={"run_id": state.run_id, "event": "node_error", "node": "routing"},
+        )
+        state.errors.append(f"routing: {e}")
     return state
 
 
 def logging_node(state: WorkflowState) -> WorkflowState:
     try:
-        log_record = write_log_record(
+        state.logs = write_log_record(
             run_id=state.run_id,
             intake=state.intake,
             extraction=state.extraction,
@@ -77,17 +94,31 @@ def logging_node(state: WorkflowState) -> WorkflowState:
             metadata=state.metadata,
             errors=state.errors,
         )
-        state.logs = log_record
     except Exception as e:
-        state.errors.append(str(e))
-        raise
+        logger.exception(
+            "Logging node failed",
+            extra={"run_id": state.run_id, "event": "node_error", "node": "logging"},
+        )
+        state.errors.append(f"logging: {e}")
     return state
 
 
 def response_node(state: WorkflowState) -> WorkflowState:
-    # This node simply marks the end of the workflow.
-    # The orchestrator will return state.routing as the API response.
+    # Marks the end of the workflow. The engine returns state.routing (or raises
+    # WorkflowError if state.errors is non-empty).
     return state
+
+
+# ---------------------------------------------------------
+# Conditional routing: skip ahead to logging on error
+# ---------------------------------------------------------
+
+def _route_after_extraction(state: WorkflowState) -> str:
+    return "logging" if state.errors else "triage"
+
+
+def _route_after_triage(state: WorkflowState) -> str:
+    return "logging" if state.errors else "routing"
 
 
 # ---------------------------------------------------------
@@ -97,7 +128,6 @@ def response_node(state: WorkflowState) -> WorkflowState:
 def build_workflow_graph():
     graph = StateGraph(WorkflowState)
 
-    # Register nodes
     graph.add_node("intake", intake_node)
     graph.add_node("extraction", extraction_node)
     graph.add_node("triage", triage_node)
@@ -105,16 +135,17 @@ def build_workflow_graph():
     graph.add_node("logging", logging_node)
     graph.add_node("response", response_node)
 
-    # Edges (linear workflow)
+    graph.add_edge(START, "intake")
     graph.add_edge("intake", "extraction")
-    graph.add_edge("extraction", "triage")
-    graph.add_edge("triage", "routing")
+    graph.add_conditional_edges(
+        "extraction", _route_after_extraction, {"triage": "triage", "logging": "logging"}
+    )
+    graph.add_conditional_edges(
+        "triage", _route_after_triage, {"routing": "routing", "logging": "logging"}
+    )
     graph.add_edge("routing", "logging")
     graph.add_edge("logging", "response")
-
-    # Mark the final node
-    graph.set_entry_point("intake")
-    graph.set_finish_point("response")
+    graph.add_edge("response", END)
 
     return graph.compile()
 

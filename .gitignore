@@ -1,0 +1,65 @@
+CLAUDE.md
+
+# ==========================================
+# Environment Variables & Secrets (CRITICAL)
+# ==========================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+*.pem
+*.key
+*.cert
+*.secret
+credentials.json
+
+# ==========================================
+# Byte-compiled / Optimized files
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pipenv & Poetry local environments
+.pipenv/
+.poetry/
+
+# ==========================================
+# Distribution / Packaging Output
+# ==========================================
+bin/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ==========================================
+# Testing & Code Coverage
+# ==========================================
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+.htmlcov/
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover

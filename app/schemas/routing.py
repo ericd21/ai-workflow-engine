@@ -1,9 +1,10 @@
-from pydantic import BaseModel, Field
 from enum import Enum
-from typing import Optional
 
-from app.schemas.triage import TriageDecision
-from app.schemas.extraction import Category, Urgency
+from pydantic import BaseModel
+
+from app.schemas.extraction import Urgency
+from app.schemas.intake import Department
+from app.schemas.triage import Priority
 
 
 class RoutingTarget(str, Enum):
@@ -26,26 +27,26 @@ class RoutingDecision(BaseModel):
     # Where the issue is routed
     target: RoutingTarget
 
-    # SLA determined by urgency + category + triage rules
+    # SLA determined by urgency + department + triage rules
     sla: SLA
 
     # Whether human review is required
     human_review_required: bool = False
 
     # Reason for human review (if applicable)
-    human_review_reason: Optional[str] = None
+    human_review_reason: str | None = None
 
-    # Final category after triage
-    final_category: Category
+    # Final department after triage
+    final_department: Department
 
     # Urgency from triage
     urgency: Urgency
 
     # Priority from triage
-    priority: str
+    priority: Priority
 
     # Summary propagated from triage
     summary: str
 
     # Notes for logging/debugging
-    routing_notes: Optional[str] = None
+    routing_notes: str | None = None

@@ -1,55 +1,84 @@
-import os
 import time
-from typing import Optional
-from langchain_anthropic import ChatAnthropic
-from langsmith import traceable  
-from app.logging_config import get_logger
+from functools import lru_cache
 
+from langchain_anthropic import ChatAnthropic
+from pydantic import SecretStr
+
+from app.config import get_settings
+from app.llm.mock import generate_mock_response
+from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# Create a reusable client instance
-anthropic_client = ChatAnthropic(
-    model="claude-3-haiku-20240307",
-    api_key=os.getenv("ANTHROPIC_API_KEY"),
-    temperature=0.2,
-    max_tokens=1000,
-)
+
+@lru_cache(maxsize=1)
+def get_client() -> ChatAnthropic:
+    """Build (once) and return the shared ChatAnthropic client.
+
+    Constructed lazily so importing this module never requires an API key —
+    only an actual ``anthropic``-provider call does. A missing key is passed
+    through as ``None`` so LangChain can still pick it up from the environment.
+    """
+    settings = get_settings()
+    key = settings.anthropic_api_key
+    # langchain-anthropic's type hints are stricter than its runtime: `model` /
+    # `max_tokens` are pydantic aliases, and `api_key=None` is valid (it then
+    # reads ANTHROPIC_API_KEY from the environment).
+    return ChatAnthropic(  # type: ignore[call-arg]
+        model=settings.anthropic_model,
+        api_key=SecretStr(key) if key else None,  # type: ignore[arg-type]
+        temperature=settings.anthropic_temperature,
+        max_tokens=settings.anthropic_max_tokens,
+    )
+
+
+def _coerce_text(content) -> str:
+    """Normalize a LangChain message ``content`` (str or block list) to text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, dict):
+                parts.append(part.get("text", ""))
+            else:
+                parts.append(str(part))
+        return "".join(parts)
+    return str(content)
 
 
 def call_llm(prompt: str) -> str:
-    """
-    Call llm with model and provider specified above via LangChain with:
-    - API-level retry (max_attempts)
-    - latency measurement
-    - structured logging
+    """Call the configured LLM provider and return the raw text response.
 
-    Returns the raw text content from the model.
+    - ``LLM_PROVIDER=mock`` → deterministic offline response, no network.
+    - ``LLM_PROVIDER=anthropic`` → ChatAnthropic via LangChain, with
+      API-level retry, latency measurement, and structured logging.
     """
+    settings = get_settings()
 
+    if settings.llm_provider == "mock":
+        logger.info("LLM call served by mock provider", extra={"model": "mock"})
+        return generate_mock_response(prompt)
+
+    model_name = settings.anthropic_model
     max_attempts = 2
-    last_error: Optional[Exception] = None
+    last_error: Exception | None = None
 
     for attempt in range(1, max_attempts + 1):
         start_time = time.time()
 
         try:
-            response = anthropic_client.invoke(prompt)
+            response = get_client().invoke(prompt)
             latency_ms = (time.time() - start_time) * 1000
 
-            # LangChain's ChatAnthropic returns an AIMessage
-            output_text = response.content
+            output_text = _coerce_text(response.content)
 
-            # Basic structured logging
             logger.info(
                 "LLM call succeeded",
                 extra={
-                    "model": "claude-3-haiku-20240307",
+                    "model": model_name,
                     "attempt": attempt,
                     "latency_ms": round(latency_ms, 2),
-                    # Token usage is not directly exposed by ChatAnthropic;
-                    # if you later switch to the raw Anthropic client,
-                    # you can add prompt/completion/total tokens here.
                 },
             )
 
@@ -62,7 +91,7 @@ def call_llm(prompt: str) -> str:
             logger.warning(
                 "LLM call failed",
                 extra={
-                    "model": "claude-3-haiku-20240307",
+                    "model": model_name,
                     "attempt": attempt,
                     "latency_ms": round(latency_ms, 2),
                     "error_type": type(e).__name__,
@@ -70,18 +99,13 @@ def call_llm(prompt: str) -> str:
                 },
             )
 
-            if attempt < max_attempts:
-                continue
-            else:
-                logger.error(
-                    "LLM call failed after max attempts",
-                    extra={
-                        "model": "claude-3-haiku-20240307",
-                        "max_attempts": max_attempts,
-                        "final_error_type": type(last_error).__name__,
-                        "final_error_message": str(last_error),
-                    },
-                )
-                raise RuntimeError(
-                    f"LLM API failed after {max_attempts} attempts: {last_error}"
-                )
+    logger.error(
+        "LLM call failed after max attempts",
+        extra={
+            "model": model_name,
+            "max_attempts": max_attempts,
+            "final_error_type": type(last_error).__name__,
+            "final_error_message": str(last_error),
+        },
+    )
+    raise RuntimeError(f"LLM API failed after {max_attempts} attempts: {last_error}")

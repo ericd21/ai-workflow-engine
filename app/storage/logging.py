@@ -1,21 +1,28 @@
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 
+def _dump(obj: Any) -> Any:
+    """JSON-safe representation of a pydantic model (enums/datetimes as strings)."""
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(mode="json")
+    return obj
+
+
 def write_log_record(
     *,
     run_id: str,
     intake: Any,
-    extraction: Optional[Any],
-    triage: Optional[Any],
-    routing: Optional[Any],
-    metadata: Dict[str, Any],
+    extraction: Any | None,
+    triage: Any | None,
+    routing: Any | None,
+    metadata: dict[str, Any],
     errors: list[str],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Assemble a final structured workflow log record and write it to stdout.
     Returns the dict so the workflow graph can store it in state.logs.
@@ -24,16 +31,10 @@ def write_log_record(
     record = {
         "run_id": run_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "intake": intake.model_dump() if hasattr(intake, "model_dump") else intake,
-        "extraction": (
-            extraction.model_dump() if hasattr(extraction, "model_dump") else extraction
-        ),
-        "triage": (
-            triage.model_dump() if hasattr(triage, "model_dump") else triage
-        ),
-        "routing": (
-            routing.model_dump() if hasattr(routing, "model_dump") else routing
-        ),
+        "intake": _dump(intake),
+        "extraction": _dump(extraction),
+        "triage": _dump(triage),
+        "routing": _dump(routing),
         "metadata": metadata,
         "errors": errors,
     }
