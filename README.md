@@ -2,11 +2,11 @@
 
 **An LLM-driven intake and routing engine that pairs model-based classification with deterministic business rules.**
 
+[![CI](https://github.com/ericd21/ai-workflow-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/ericd21/ai-workflow-engine/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.12--3.13-blue)
 ![FastAPI](https://img.shields.io/badge/API-FastAPI-009688)
 ![LangGraph](https://img.shields.io/badge/orchestration-LangGraph-1c3c3c)
 ![Pydantic v2](https://img.shields.io/badge/schemas-Pydantic_v2-e92063)
-![Tests](https://img.shields.io/badge/tests-103-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 
 A contact form submits a request; the engine classifies it with an LLM, applies deterministic
@@ -201,6 +201,9 @@ Automated tests never make live API calls: `LLM_PROVIDER=mock` plus `call_llm` s
 LLM boundary. Coverage spans input validation, the balanced-brace JSON parser and its retry
 loop, triage and routing rules, the compiled graph (including every stage-failure path), the
 `WorkflowEngine`, the FastAPI endpoints, and the CLI.
+
+GitHub Actions runs ruff, mypy, and the suite on Python 3.12 and 3.13 for every push and pull
+request, with a 100% coverage gate.
 
 ## Project structure
 

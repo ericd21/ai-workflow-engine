@@ -25,6 +25,7 @@ __pycache__/
 # Pipenv & Poetry local environments
 .pipenv/
 .poetry/
+.venv/
 
 # ==========================================
 # Distribution / Packaging Output
