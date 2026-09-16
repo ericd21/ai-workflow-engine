@@ -33,6 +33,22 @@ if ! az account show --output none 2>/dev/null; then
   exit 1
 fi
 
+# `az role assignment create` errors if the exact (principal, role, scope)
+# assignment already exists, unlike the `create` commands for the resources
+# themselves — so a re-run after a partial failure needs this to be a no-op
+# rather than crashing on something that already succeeded last time.
+assign_role_if_missing() {
+  local principal_id="$1" principal_type="$2" role="$3" scope="$4"
+  if az role assignment list --assignee "$principal_id" --role "$role" --scope "$scope" \
+       --query "[0].id" -o tsv 2>/dev/null | grep -q .; then
+    echo "    (already granted, skipping)"
+  else
+    az role assignment create \
+      --assignee-object-id "$principal_id" --assignee-principal-type "$principal_type" \
+      --role "$role" --scope "$scope" --output none
+  fi
+}
+
 RESOURCE_GROUP="${RESOURCE_GROUP:-ai-workflow-engine-rg}"
 LOCATION="${LOCATION:-eastus}"
 ACR_NAME="${ACR_NAME:-acraiwfericd21}"          # alnum only, globally unique
@@ -74,9 +90,7 @@ IDENTITY_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCE_GROUP" --na
 
 echo "==> Granting the identity pull access to the registry (AcrPull)"
 ACR_ID=$(az acr show --resource-group "$RESOURCE_GROUP" --name "$ACR_NAME" --query id -o tsv)
-az role assignment create \
-  --assignee-object-id "$IDENTITY_PRINCIPAL_ID" --assignee-principal-type ServicePrincipal \
-  --role "AcrPull" --scope "$ACR_ID" --output none
+assign_role_if_missing "$IDENTITY_PRINCIPAL_ID" ServicePrincipal "AcrPull" "$ACR_ID"
 
 echo "==> Key Vault: $KEY_VAULT_NAME (RBAC authorization, not legacy access policies)"
 az keyvault create \
@@ -85,11 +99,16 @@ az keyvault create \
 KEY_VAULT_ID=$(az keyvault show --name "$KEY_VAULT_NAME" --query id -o tsv)
 
 echo "==> Granting the identity read-only secret access (Key Vault Secrets User — least privilege)"
-az role assignment create \
-  --assignee-object-id "$IDENTITY_PRINCIPAL_ID" --assignee-principal-type ServicePrincipal \
-  --role "Key Vault Secrets User" --scope "$KEY_VAULT_ID" --output none
+assign_role_if_missing "$IDENTITY_PRINCIPAL_ID" ServicePrincipal "Key Vault Secrets User" "$KEY_VAULT_ID"
 
-echo "==> Waiting ~30s for the role assignment to propagate before the app tries to use it"
+# RBAC-authorized vaults have no data-plane access by default, not even for
+# whoever created them — grant the signed-in user write access so this
+# script itself can set the secret values below.
+echo "==> Granting you write access to secrets (Key Vault Secrets Officer) so this script can set them"
+CURRENT_USER_ID=$(az ad signed-in-user show --query id -o tsv)
+assign_role_if_missing "$CURRENT_USER_ID" User "Key Vault Secrets Officer" "$KEY_VAULT_ID"
+
+echo "==> Waiting ~30s for the role assignments to propagate"
 sleep 30
 
 echo "==> Storing secrets in Key Vault (values are not echoed, not saved to disk)"
@@ -100,23 +119,28 @@ echo "==> Container Apps environment: $ENV_NAME"
 az containerapp env create --resource-group "$RESOURCE_GROUP" --name "$ENV_NAME" --location "$LOCATION" --output none
 
 echo "==> Container app: $APP_NAME"
-az containerapp create \
-  --resource-group "$RESOURCE_GROUP" --name "$APP_NAME" --environment "$ENV_NAME" \
-  --image "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG}" \
-  --registry-server "$ACR_LOGIN_SERVER" \
-  --user-assigned "$IDENTITY_ID" \
-  --registry-identity "$IDENTITY_ID" \
-  --target-port 8000 --ingress external \
-  --min-replicas 0 --max-replicas 2 \
-  --secrets \
-    "anthropic-api-key=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/anthropic-api-key,identityref:${IDENTITY_ID}" \
-    "langsmith-api-key=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/langsmith-api-key,identityref:${IDENTITY_ID}" \
-  --env-vars \
-    "ANTHROPIC_API_KEY=secretref:anthropic-api-key" \
-    "LANGSMITH_API_KEY=secretref:langsmith-api-key" \
-    "LLM_PROVIDER=anthropic" \
-    "LANGSMITH_TRACING=true" \
-  --output none
+if az containerapp show --resource-group "$RESOURCE_GROUP" --name "$APP_NAME" --output none 2>/dev/null; then
+  echo "    (already exists — leaving it as-is; delete it first if you need to change its config,"
+  echo "     or use 'az containerapp update' to push a new image)"
+else
+  az containerapp create \
+    --resource-group "$RESOURCE_GROUP" --name "$APP_NAME" --environment "$ENV_NAME" \
+    --image "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG}" \
+    --registry-server "$ACR_LOGIN_SERVER" \
+    --user-assigned "$IDENTITY_ID" \
+    --registry-identity "$IDENTITY_ID" \
+    --target-port 8000 --ingress external \
+    --min-replicas 0 --max-replicas 2 \
+    --secrets \
+      "anthropic-api-key=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/anthropic-api-key,identityref:${IDENTITY_ID}" \
+      "langsmith-api-key=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/langsmith-api-key,identityref:${IDENTITY_ID}" \
+    --env-vars \
+      "ANTHROPIC_API_KEY=secretref:anthropic-api-key" \
+      "LANGSMITH_API_KEY=secretref:langsmith-api-key" \
+      "LLM_PROVIDER=anthropic" \
+      "LANGSMITH_TRACING=true" \
+    --output none
+fi
 
 FQDN=$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$APP_NAME" \
   --query properties.configuration.ingress.fqdn -o tsv)
