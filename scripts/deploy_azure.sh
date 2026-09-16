@@ -27,6 +27,12 @@ set -euo pipefail
 : "${ANTHROPIC_API_KEY:?Set ANTHROPIC_API_KEY in the environment before running this script}"
 : "${LANGSMITH_API_KEY:?Set LANGSMITH_API_KEY in the environment before running this script}"
 
+if ! az account show --output none 2>/dev/null; then
+  echo "Not logged in to Azure. Run 'az login' first" >&2
+  echo "(on a remote/Codespace terminal with no local browser: 'az login --use-device-code')." >&2
+  exit 1
+fi
+
 RESOURCE_GROUP="${RESOURCE_GROUP:-ai-workflow-engine-rg}"
 LOCATION="${LOCATION:-eastus}"
 ACR_NAME="${ACR_NAME:-acraiwfericd21}"          # alnum only, globally unique
