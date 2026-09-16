@@ -226,6 +226,11 @@ ANTHROPIC_API_KEY=sk-... LANGSMITH_API_KEY=ls-... ./scripts/deploy_azure.sh
 No Azure CLI or Docker locally? Open this repo in a **GitHub Codespace** — `.devcontainer/`
 provisions both automatically (`az login`, then run the script above).
 
+Both scripts are idempotent — safe to re-run after a partial failure. See
+[`docs/AZURE_DEPLOYMENT_NOTES.md`](docs/AZURE_DEPLOYMENT_NOTES.md) for the gotchas that
+came up deploying this for real (Key Vault RBAC, subscription provider registration,
+Codespaces sizing, secret hygiene).
+
 ## Project structure
 
 ```
