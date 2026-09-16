@@ -43,6 +43,20 @@ APP_NAME="${APP_NAME:-ai-workflow-engine}"
 IMAGE_NAME="ai-workflow-engine"
 IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD 2>/dev/null || echo latest)}"
 
+# New/free subscriptions typically start with most resource providers
+# unregistered. Register everything this deployment needs up front instead
+# of failing partway through for each one (MissingSubscriptionRegistration).
+# One-time per subscription — a no-op on every later run.
+echo "==> Ensuring required resource providers are registered (first run only, ~1-2 min)"
+for ns in Microsoft.ContainerRegistry Microsoft.App Microsoft.OperationalInsights \
+          Microsoft.ManagedIdentity Microsoft.KeyVault; do
+  state=$(az provider show --namespace "$ns" --query registrationState -o tsv 2>/dev/null || echo "NotRegistered")
+  if [ "$state" != "Registered" ]; then
+    echo "    registering $ns..."
+    az provider register --namespace "$ns" --wait
+  fi
+done
+
 echo "==> Resource group: $RESOURCE_GROUP ($LOCATION)"
 az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output none
 
