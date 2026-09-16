@@ -26,6 +26,8 @@ flowchart LR
     T -. on error .-> L
 ```
 
+<p align="center"><img src="docs/images/ai-wf-webform-blank.jpeg" alt="Contact form" width="700"></p>
+
 ## Highlights
 
 - **Hybrid architecture** — the LLM classifies; deterministic rules make every business decision, so routing outcomes are reproducible and unit-testable.
@@ -144,6 +146,8 @@ Each run emits JSON logs per step and one consolidated record. The record holds:
 }
 ```
 
+<p align="center"><img src="docs/images/ai-wf-langgraph-nodes.jpeg" alt="LangGraph run trace in LangSmith" width="700"></p>
+
 Set `LANGSMITH_TRACING=true` (with `LANGSMITH_API_KEY`) to also send a LangSmith trace of each
 step.
 
@@ -205,6 +209,8 @@ loop, triage and routing rules, the compiled graph (including every stage-failur
 GitHub Actions runs ruff, mypy, and the suite on Python 3.12 and 3.13 for every push and pull
 request, with a 100% coverage gate.
 
+<p align="center"><img src="docs/images/github-deployment-green.jpeg" alt="GitHub Actions CI run, all green" width="700"></p>
+
 ## Deployment
 
 Ships to **Azure Container Apps** via a scripted, repeatable deploy — no manual Portal steps.
@@ -222,6 +228,8 @@ Ships to **Azure Container Apps** via a scripted, repeatable deploy — no manua
 ANTHROPIC_API_KEY=sk-... LANGSMITH_API_KEY=ls-... ./scripts/deploy_azure.sh
 ./scripts/teardown_azure.sh   # tear it all down when you're done with it
 ```
+
+<p align="center"><img src="docs/images/ai-wf-azure-rg.jpeg" alt="Deployed resource group in the Azure Portal" width="700"></p>
 
 No Azure CLI or Docker locally? Open this repo in a **GitHub Codespace** — `.devcontainer/`
 provisions both automatically (`az login`, then run the script above).
