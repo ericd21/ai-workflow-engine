@@ -93,9 +93,13 @@ ACR_ID=$(az acr show --resource-group "$RESOURCE_GROUP" --name "$ACR_NAME" --que
 assign_role_if_missing "$IDENTITY_PRINCIPAL_ID" ServicePrincipal "AcrPull" "$ACR_ID"
 
 echo "==> Key Vault: $KEY_VAULT_NAME (RBAC authorization, not legacy access policies)"
-az keyvault create \
-  --resource-group "$RESOURCE_GROUP" --name "$KEY_VAULT_NAME" --location "$LOCATION" \
-  --enable-rbac-authorization true --output none
+if az keyvault show --name "$KEY_VAULT_NAME" --output none 2>/dev/null; then
+  echo "    (already exists, skipping)"
+else
+  az keyvault create \
+    --resource-group "$RESOURCE_GROUP" --name "$KEY_VAULT_NAME" --location "$LOCATION" \
+    --enable-rbac-authorization true --output none
+fi
 KEY_VAULT_ID=$(az keyvault show --name "$KEY_VAULT_NAME" --query id -o tsv)
 
 echo "==> Granting the identity read-only secret access (Key Vault Secrets User — least privilege)"
