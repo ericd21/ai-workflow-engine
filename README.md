@@ -205,6 +205,27 @@ loop, triage and routing rules, the compiled graph (including every stage-failur
 GitHub Actions runs ruff, mypy, and the suite on Python 3.12 and 3.13 for every push and pull
 request, with a 100% coverage gate.
 
+## Deployment
+
+Ships to **Azure Container Apps** via a scripted, repeatable deploy — no manual Portal steps.
+`scripts/deploy_azure.sh`:
+
+1. builds the image in the cloud with `az acr build` (no local Docker required),
+2. creates a **user-assigned managed identity** and an **RBAC-authorized Key Vault**,
+3. grants that identity read-only access (`Key Vault Secrets User`) and stores
+   `ANTHROPIC_API_KEY` / `LANGSMITH_API_KEY` there,
+4. deploys the container wired to the identity, with the secrets injected as plain
+   environment variables via Container Apps' native Key Vault reference — the application
+   code is unaware Key Vault exists; it still just reads `os.getenv(...)`.
+
+```bash
+ANTHROPIC_API_KEY=sk-... LANGSMITH_API_KEY=ls-... ./scripts/deploy_azure.sh
+./scripts/teardown_azure.sh   # tear it all down when you're done with it
+```
+
+No Azure CLI or Docker locally? Open this repo in a **GitHub Codespace** — `.devcontainer/`
+provisions both automatically (`az login`, then run the script above).
+
 ## Project structure
 
 ```
@@ -218,7 +239,9 @@ app/
   storage/           structured log-record assembly
   static/  templates/   contact form assets
 tests/               pytest suite (unit + integration + API)
+scripts/             Azure deploy / teardown scripts
 docs/                full evaluation and implementation write-up
+Dockerfile           multi-stage build, non-root runtime image
 ```
 
 ## Further reading

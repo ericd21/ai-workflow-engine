@@ -1,0 +1,11 @@
+{
+  "name": "ai-workflow-engine",
+  "image": "mcr.microsoft.com/devcontainers/python:3.13",
+  "features": {
+    "ghcr.io/devcontainers/features/azure-cli:1": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "postCreateCommand": "pip install poetry && poetry install",
+  "forwardPorts": [8000],
+  "postAttachCommand": "echo 'Next: az login   then: ./scripts/deploy_azure.sh'"
+}
